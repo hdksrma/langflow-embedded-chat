@@ -40,9 +40,9 @@ export default function ChatWindow({
   additional_headers
 }: {
   api_key?: string;
-  output_type: string,
-  input_type: string,
-  output_component?: string,
+  output_type: string;
+  input_type: string;
+  output_component?: string;
   bot_message_style?: React.CSSProperties;
   send_icon_style?: React.CSSProperties;
   user_message_style?: React.CSSProperties;
@@ -70,15 +70,16 @@ export default function ChatWindow({
   height?: number;
   sessionId: React.MutableRefObject<string>;
   additional_headers?: { [key: string]: string };
-
 }) {
   const [value, setValue] = useState<string>("");
   const ref = useRef<HTMLDivElement>(null);
   const lastMessage = useRef<HTMLDivElement>(null);
   const [windowPosition, setWindowPosition] = useState({ left: "0", top: "0" });
-  const inputRef = useRef<HTMLInputElement>(null); /* User input Ref */
+  const inputRef = useRef<HTMLInputElement>(null); // User input Ref
+  const [sendingMessage, setSendingMessage] = useState(false);
+
   useEffect(() => {
-    if (triggerRef)
+    if (triggerRef) {
       setWindowPosition(
         getChatPosition(
           triggerRef.current!.getBoundingClientRect(),
@@ -87,95 +88,76 @@ export default function ChatWindow({
           position
         )
       );
+    }
   }, [triggerRef, width, height, position]);
 
-  /* Initial listener for loss of focus that refocuses User input after a small delay */
+  function handleOptionClick(option: string) {
+    if (!option.trim()) return; // Prevent sending empty messages
+    addMessage({ message: option, isSend: true });
+    setSendingMessage(true);
+    setValue(""); // Clear input immediately after sending
 
-  const [sendingMessage, setSendingMessage] = useState(false);
-
-  function handleClick() {
-    if (value && value.trim() !== "") {
-      addMessage({ message: value, isSend: true });
-      setSendingMessage(true);
-      setValue("");
-      sendMessage(hostUrl, flowId, value, input_type, output_type, sessionId, output_component, tweaks, api_key, additional_headers)
-        .then((res) => {
-          if (
-            res.data &&
-            res.data.outputs &&
-            Object.keys(res.data.outputs).length > 0 &&
-            res.data.outputs[0].outputs && res.data.outputs[0].outputs.length > 0
-          ) {
-            const flowOutputs: Array<any> = res.data.outputs[0].outputs;
-            if (output_component &&
-              flowOutputs.map(e => e.component_id).includes(output_component)) {
-              Object.values(flowOutputs.find(e => e.component_id === output_component).outputs).forEach((output: any) => {
-                addMessage({
-                  message: extractMessageFromOutput(output),
-                  isSend: false,
-                });
-              })
-            } else if (
-              flowOutputs.length === 1
-            ) {
-              Object.values(flowOutputs[0].outputs).forEach((output: any) => {
-                addMessage({
-                  message: extractMessageFromOutput(output),
-                  isSend: false,
-                });
-              })
-            } else {
+    sendMessage(hostUrl, flowId, option, input_type, output_type, sessionId, output_component, tweaks, api_key, additional_headers)
+      .then((res) => {
+        if (res.data && res.data.outputs && Object.keys(res.data.outputs).length > 0 && res.data.outputs[0].outputs && res.data.outputs[0].outputs.length > 0) {
+          const flowOutputs: Array<any> = res.data.outputs[0].outputs;
+          if (output_component && flowOutputs.map(e => e.component_id).includes(output_component)) {
+            Object.values(flowOutputs.find(e => e.component_id === output_component).outputs).forEach((output: any) => {
               addMessage({
-                message: "Multiple outputs were detected in the response. Please, define the output_component to specify the intended response.",
+                message: extractMessageFromOutput(output),
                 isSend: false,
-                error: true,
               });
-            }
-          }
-          if (res.data && res.data.session_id) {
-            sessionId.current = res.data.session_id;
-          }
-          setSendingMessage(false);
-        })
-        .catch((err) => {
-          const response = err.response;
-          if (err.code === "ERR_NETWORK") {
-            updateLastMessage({
-              message: "Network error",
-              isSend: false,
-              error: true,
             });
-          } else if (
-            response &&
-            response.status === 500 &&
-            response.data &&
-            response.data.detail
-          ) {
-            updateLastMessage({
-              message: response.data.detail,
+          } else if (flowOutputs.length === 1) {
+            Object.values(flowOutputs[0].outputs).forEach((output: any) => {
+              addMessage({
+                message: extractMessageFromOutput(output),
+                isSend: false,
+              });
+            });
+          } else {
+            addMessage({
+              message: "Multiple outputs were detected in the response. Please, define the output_component to specify the intended response.",
               isSend: false,
               error: true,
             });
           }
-          console.error(err);
-          setSendingMessage(false);
-        });
-    }
+        }
+        if (res.data && res.data.session_id) {
+          sessionId.current = res.data.session_id;
+        }
+        setSendingMessage(false);
+      })
+      .catch((err) => {
+        const response = err.response;
+        if (err.code === "ERR_NETWORK") {
+          updateLastMessage({
+            message: "Network error",
+            isSend: false,
+            error: true,
+          });
+        } else if (response && response.status === 500 && response.data && response.data.detail) {
+          updateLastMessage({
+            message: response.data.detail,
+            isSend: false,
+            error: true,
+          });
+        }
+        console.error(err);
+        setSendingMessage(false);
+      });
   }
 
   useEffect(() => {
-    if (lastMessage.current)
-      lastMessage.current.scrollIntoView({ behavior: "smooth" });
+    if (lastMessage.current) lastMessage.current.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  /* Refocus the User input whenever a new response is returned from the LLM */
-
   useEffect(() => {
-      // after a slight delay
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
-  }, [messages,open]);
+    // after a slight delay
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+  }, [messages, open]);
 
   return (
     <div
@@ -208,17 +190,60 @@ export default function ChatWindow({
           </div>
         </div>
         <div className="cl-messages_container">
-          {messages.map((message, index) => (
-            <ChatMessage
-              bot_message_style={bot_message_style}
-              user_message_style={user_message_style}
-              error_message_style={error_message_style}
-              key={index}
-              message={message.message}
-              isSend={message.isSend}
-              error={message.error}
-            />
-          ))}
+          {messages.map((message, index) => {
+            if (message.message.includes("option: ")) {
+              const [question, ...options] = message.message.split("option: ").map(opt => opt.trim()).filter(Boolean);
+              return (
+                <div key={index}>
+                  <ChatMessage
+                    bot_message_style={bot_message_style}
+                    user_message_style={user_message_style}
+                    error_message_style={error_message_style}
+                    message={question}
+                    isSend={message.isSend}
+                    error={message.error}
+                  />
+                  <div className="options-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    {options.map((option, idx) => (
+                      <button
+                        key={idx}
+                        className="option-button"
+                        onClick={() => {
+                          handleOptionClick(option);
+                        }}
+                        style={{
+                          backgroundColor: '#4CAF50',
+                          color: 'white',
+                          padding: '10px 20px',
+                          margin: '5px 0',
+                          border: 'none',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          fontWeight: 'bold',
+                          transition: 'background-color 0.3s ease',
+                        }}
+                        onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#45a049')}
+                        onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#4CAF50')}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <ChatMessage
+                bot_message_style={bot_message_style}
+                user_message_style={user_message_style}
+                error_message_style={error_message_style}
+                key={index}
+                message={message.message}
+                isSend={message.isSend}
+                error={message.error}
+              />
+            );
+          })}
           {sendingMessage && (
             <ChatMessagePlaceholder bot_message_style={bot_message_style} />
           )}
@@ -229,7 +254,9 @@ export default function ChatWindow({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleClick();
+              if (e.key === "Enter") {
+                handleOptionClick(value);
+              }
             }}
             type="text"
             disabled={sendingMessage}
@@ -241,7 +268,9 @@ export default function ChatWindow({
           <button
             style={send_button_style}
             disabled={sendingMessage}
-            onClick={handleClick}
+            onClick={() => {
+              handleOptionClick(value);
+            }}
           >
             <Send
               style={send_icon_style}
